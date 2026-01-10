@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:text="Overlay Active"
+    android:background="#AA000000"
+    android:textColor="#FFFFFF"
+    android:padding="12dp"
+    android:textSize="16sp" />
