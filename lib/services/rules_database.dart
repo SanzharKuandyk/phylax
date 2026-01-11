@@ -20,7 +20,7 @@ class RulesDatabase {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -35,8 +35,8 @@ class RulesDatabase {
         pattern TEXT NOT NULL,
         order_index INTEGER NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 1,
-        image_path TEXT,
-        overlay_text TEXT DEFAULT 'Stay Focused!',
+        image_paths TEXT DEFAULT '[]',
+        overlay_texts TEXT DEFAULT '[]',
         text_position_x REAL DEFAULT 0.5,
         text_position_y REAL DEFAULT 0.5,
         image_scale REAL DEFAULT 1.0,
@@ -49,6 +49,36 @@ class RulesDatabase {
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('ALTER TABLE rules ADD COLUMN name TEXT');
+    }
+    if (oldVersion < 4) {
+      // Migrate from single image/text to arrays
+      await db.execute('ALTER TABLE rules ADD COLUMN image_paths TEXT DEFAULT "[]"');
+      await db.execute('ALTER TABLE rules ADD COLUMN overlay_texts TEXT DEFAULT "[]"');
+
+      // Migrate existing data
+      final existingRules = await db.query('rules');
+      for (final rule in existingRules) {
+        final id = rule['id'] as int;
+        final oldImagePath = rule['image_path'] as String?;
+        final oldOverlayText = rule['overlay_text'] as String?;
+
+        String imagePaths = '[]';
+        String overlayTexts = '[]';
+
+        if (oldImagePath != null && oldImagePath.isNotEmpty) {
+          imagePaths = '["${oldImagePath.replaceAll('"', '\\"')}"]';
+        }
+        if (oldOverlayText != null && oldOverlayText.isNotEmpty) {
+          overlayTexts = '["${oldOverlayText.replaceAll('"', '\\"')}"]';
+        }
+
+        await db.update(
+          'rules',
+          {'image_paths': imagePaths, 'overlay_texts': overlayTexts},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
     }
   }
 

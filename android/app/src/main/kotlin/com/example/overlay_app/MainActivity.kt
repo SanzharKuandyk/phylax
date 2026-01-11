@@ -85,12 +85,15 @@ class MainActivity : FlutterActivity() {
                         AppMonitorService.blockingRules.clear()
                         AppMonitorService.blockingRules.addAll(
                             rulesData.map {
+                                val imagePaths = (it["imagePaths"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                                val overlayTexts = (it["overlayTexts"] as? List<*>)?.filterIsInstance<String>()
+                                    ?.takeIf { list -> list.isNotEmpty() } ?: BlockingRule.defaultQuotes
                                 BlockingRule(
                                     type = RuleType.values()[(it["type"] as Int)],
                                     pattern = it["pattern"] as String,
                                     enabled = it["enabled"] as Boolean,
-                                    imagePath = it["imagePath"] as String?,
-                                    overlayText = it["overlayText"] as String? ?: "Stay Focused!",
+                                    imagePaths = imagePaths,
+                                    overlayTexts = overlayTexts,
                                     textX = (it["textX"] as? Double)?.toFloat() ?: 0.5f,
                                     textY = (it["textY"] as? Double)?.toFloat() ?: 0.5f,
                                     imageScale = (it["imageScale"] as Double?)?.toFloat() ?: 1.0f,

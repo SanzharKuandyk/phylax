@@ -188,8 +188,8 @@ class AppMonitorService : Service() {
                 type = RuleType.INDIVIDUAL,
                 pattern = packageName,
                 enabled = true,
-                imagePath = null,
-                overlayText = "Stay Focused!",
+                imagePaths = emptyList(),
+                overlayTexts = BlockingRule.defaultQuotes,
                 textX = 0.5f,
                 textY = 0.5f,
                 imageScale = 1.0f,
@@ -225,8 +225,9 @@ class AppMonitorService : Service() {
     }
 
     private fun showOverlay(rule: BlockingRule) {
-        OverlayService.overlayImagePath = rule.imagePath
-        OverlayService.overlayText = rule.overlayText
+        // Random selection from available images and texts
+        OverlayService.overlayImagePath = rule.getRandomImagePath()
+        OverlayService.overlayText = rule.getRandomText()
         OverlayService.textPositionX = rule.textX
         OverlayService.textPositionY = rule.textY
         OverlayService.imageScale = rule.imageScale

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum RuleType {
   individual, // Match specific package name
   nameContains, // App name contains string
@@ -14,9 +16,9 @@ class BlockingRule {
   final int order; // Lower = higher priority
   final bool enabled;
 
-  // Overlay configuration
-  final String? imagePath;
-  final String overlayText;
+  // Overlay configuration - multiple images and texts (random selection)
+  final List<String> imagePaths; // Multiple images, shown randomly
+  final List<String> overlayTexts; // Multiple quotes/texts, shown randomly
   final double textPositionX; // 0-1
   final double textPositionY; // 0-1
   final double imageScale;
@@ -30,14 +32,32 @@ class BlockingRule {
     required this.pattern,
     required this.order,
     this.enabled = true,
-    this.imagePath,
-    this.overlayText = 'Stay Focused!',
+    List<String>? imagePaths,
+    List<String>? overlayTexts,
     this.textPositionX = 0.5,
     this.textPositionY = 0.5,
     this.imageScale = 1.0,
     this.imageOffsetX = 0.0,
     this.imageOffsetY = 0.0,
-  });
+  })  : imagePaths = imagePaths ?? [],
+        overlayTexts = overlayTexts ?? defaultQuotes;
+
+  // Legacy getters for backwards compatibility
+  String? get imagePath => imagePaths.isNotEmpty ? imagePaths.first : null;
+  String get overlayText => overlayTexts.isNotEmpty ? overlayTexts.first : defaultQuotes.first;
+
+  static const List<String> defaultQuotes = [
+    "Your future self will thank you.",
+    "Small steps lead to big changes.",
+    "Is this helping you become who you want to be?",
+    "You're stronger than this urge.",
+    "What could you accomplish instead?",
+    "Every moment is a fresh beginning.",
+    "Choose growth over comfort.",
+    "Your time is precious. Use it wisely.",
+    "Break the loop. Build something better.",
+    "This too shall pass.",
+  ];
 
   BlockingRule copyWith({
     int? id,
@@ -46,8 +66,8 @@ class BlockingRule {
     String? pattern,
     int? order,
     bool? enabled,
-    String? imagePath,
-    String? overlayText,
+    List<String>? imagePaths,
+    List<String>? overlayTexts,
     double? textPositionX,
     double? textPositionY,
     double? imageScale,
@@ -61,8 +81,8 @@ class BlockingRule {
       pattern: pattern ?? this.pattern,
       order: order ?? this.order,
       enabled: enabled ?? this.enabled,
-      imagePath: imagePath ?? this.imagePath,
-      overlayText: overlayText ?? this.overlayText,
+      imagePaths: imagePaths ?? this.imagePaths,
+      overlayTexts: overlayTexts ?? this.overlayTexts,
       textPositionX: textPositionX ?? this.textPositionX,
       textPositionY: textPositionY ?? this.textPositionY,
       imageScale: imageScale ?? this.imageScale,
@@ -79,8 +99,8 @@ class BlockingRule {
       'pattern': pattern,
       'order_index': order,
       'enabled': enabled ? 1 : 0,
-      'image_path': imagePath,
-      'overlay_text': overlayText,
+      'image_paths': jsonEncode(imagePaths),
+      'overlay_texts': jsonEncode(overlayTexts),
       'text_position_x': textPositionX,
       'text_position_y': textPositionY,
       'image_scale': imageScale,
@@ -90,6 +110,27 @@ class BlockingRule {
   }
 
   factory BlockingRule.fromMap(Map<String, dynamic> map) {
+    // Handle migration from old single value columns to new array columns
+    List<String> imagePaths = [];
+    List<String> overlayTexts = [];
+
+    // Try new columns first
+    if (map['image_paths'] != null) {
+      final decoded = jsonDecode(map['image_paths'] as String);
+      imagePaths = List<String>.from(decoded);
+    } else if (map['image_path'] != null) {
+      // Migrate from old single column
+      imagePaths = [map['image_path'] as String];
+    }
+
+    if (map['overlay_texts'] != null) {
+      final decoded = jsonDecode(map['overlay_texts'] as String);
+      overlayTexts = List<String>.from(decoded);
+    } else if (map['overlay_text'] != null) {
+      // Migrate from old single column
+      overlayTexts = [map['overlay_text'] as String];
+    }
+
     return BlockingRule(
       id: map['id'] as int?,
       name: map['name'] as String?,
@@ -97,8 +138,8 @@ class BlockingRule {
       pattern: map['pattern'] as String,
       order: map['order_index'] as int,
       enabled: (map['enabled'] as int) == 1,
-      imagePath: map['image_path'] as String?,
-      overlayText: map['overlay_text'] as String? ?? 'Stay Focused!',
+      imagePaths: imagePaths,
+      overlayTexts: overlayTexts.isEmpty ? null : overlayTexts,
       textPositionX: (map['text_position_x'] as num?)?.toDouble() ?? 0.5,
       textPositionY: (map['text_position_y'] as num?)?.toDouble() ?? 0.5,
       imageScale: (map['image_scale'] as num?)?.toDouble() ?? 1.0,

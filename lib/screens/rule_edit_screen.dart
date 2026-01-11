@@ -22,13 +22,14 @@ class _RuleEditScreenState extends State<RuleEditScreen> {
   late RuleType _selectedType;
   late TextEditingController _nameController;
   late TextEditingController _patternController;
-  late TextEditingController _textController;
   late double _textX;
   late double _textY;
   late double _imageScale;
   late double _imageOffsetX;
   late double _imageOffsetY;
-  String? _imagePath;
+  List<String> _imagePaths = [];
+  List<String> _overlayTexts = [];
+  bool _useDefaultQuotes = true;
   List<AppInfo> _installedApps = [];
   bool _isLoading = true;
 
@@ -40,23 +41,34 @@ class _RuleEditScreenState extends State<RuleEditScreen> {
     _selectedType = widget.rule?.type ?? RuleType.individual;
     _nameController = TextEditingController(text: widget.rule?.name ?? '');
     _patternController = TextEditingController(text: widget.rule?.pattern ?? '');
-    _textController = TextEditingController(
-      text: widget.rule?.overlayText ?? 'Stay Focused!',
-    );
     _textX = widget.rule?.textPositionX ?? 0.5;
     _textY = widget.rule?.textPositionY ?? 0.5;
     _imageScale = widget.rule?.imageScale ?? 1.0;
     _imageOffsetX = widget.rule?.imageOffsetX ?? 0.0;
     _imageOffsetY = widget.rule?.imageOffsetY ?? 0.0;
-    _imagePath = widget.rule?.imagePath;
+    _imagePaths = List.from(widget.rule?.imagePaths ?? []);
+
+    // Check if using custom quotes or defaults
+    final ruleTexts = widget.rule?.overlayTexts ?? [];
+    _useDefaultQuotes = ruleTexts.isEmpty ||
+        _listsEqual(ruleTexts, BlockingRule.defaultQuotes);
+    _overlayTexts = _useDefaultQuotes ? [] : List.from(ruleTexts);
+
     _loadApps();
+  }
+
+  bool _listsEqual(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _patternController.dispose();
-    _textController.dispose();
     super.dispose();
   }
 
@@ -80,22 +92,42 @@ class _RuleEditScreenState extends State<RuleEditScreen> {
       await File(result.path).copy(savedPath);
 
       setState(() {
-        _imagePath = savedPath;
-        // Reset image transformations for new image
-        _imageScale = 1.0;
-        _imageOffsetX = 0.0;
-        _imageOffsetY = 0.0;
+        _imagePaths.add(savedPath);
+        // Reset image transformations when first image is added
+        if (_imagePaths.length == 1) {
+          _imageScale = 1.0;
+          _imageOffsetX = 0.0;
+          _imageOffsetY = 0.0;
+        }
       });
     }
   }
 
-  void _removeImage() {
+  void _removeImage(int index) {
     setState(() {
-      _imagePath = null;
-      _imageScale = 1.0;
-      _imageOffsetX = 0.0;
-      _imageOffsetY = 0.0;
+      _imagePaths.removeAt(index);
+      if (_imagePaths.isEmpty) {
+        _imageScale = 1.0;
+        _imageOffsetX = 0.0;
+        _imageOffsetY = 0.0;
+      }
     });
+  }
+
+  void _addQuote() {
+    setState(() {
+      _overlayTexts.add('');
+    });
+  }
+
+  void _removeQuote(int index) {
+    setState(() {
+      _overlayTexts.removeAt(index);
+    });
+  }
+
+  void _updateQuote(int index, String value) {
+    _overlayTexts[index] = value;
   }
 
   String? _validatePattern(String? value) {
@@ -139,6 +171,22 @@ class _RuleEditScreenState extends State<RuleEditScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final ruleName = _nameController.text.trim();
+
+    // Get overlay texts - use defaults if toggle is on, otherwise use custom
+    List<String>? overlayTexts;
+    if (_useDefaultQuotes) {
+      overlayTexts = null; // Will use defaults
+    } else {
+      // Filter out empty quotes
+      overlayTexts = _overlayTexts
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+      if (overlayTexts.isEmpty) {
+        overlayTexts = null; // Fall back to defaults
+      }
+    }
+
     final rule = BlockingRule(
       id: widget.rule?.id,
       name: ruleName.isEmpty ? null : ruleName,
@@ -146,10 +194,8 @@ class _RuleEditScreenState extends State<RuleEditScreen> {
       pattern: _patternController.text.trim(),
       order: widget.rule?.order ?? -1,
       enabled: widget.rule?.enabled ?? true,
-      imagePath: _imagePath,
-      overlayText: _textController.text.trim().isEmpty
-          ? 'Stay Focused!'
-          : _textController.text.trim(),
+      imagePaths: _imagePaths,
+      overlayTexts: overlayTexts,
       textPositionX: _textX,
       textPositionY: _textY,
       imageScale: _imageScale,
@@ -167,12 +213,21 @@ class _RuleEditScreenState extends State<RuleEditScreen> {
   }
 
   void _openPreview() async {
+    // Use first image for preview, or null if none
+    final previewImage = _imagePaths.isNotEmpty ? _imagePaths.first : null;
+    // Use first custom text, or first default quote
+    final previewText = _useDefaultQuotes
+        ? BlockingRule.defaultQuotes.first
+        : (_overlayTexts.isNotEmpty && _overlayTexts.first.isNotEmpty
+            ? _overlayTexts.first
+            : BlockingRule.defaultQuotes.first);
+
     final result = await Navigator.push<PreviewResult>(
       context,
       MaterialPageRoute(
         builder: (_) => PreviewScreen(
-          imagePath: _imagePath,
-          text: _textController.text.isEmpty ? 'Stay Focused!' : _textController.text,
+          imagePath: previewImage,
+          text: previewText,
           textX: _textX,
           textY: _textY,
           imageScale: _imageScale,
@@ -452,53 +507,180 @@ class _RuleEditScreenState extends State<RuleEditScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Overlay Image (optional)', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 8),
-        if (_imagePath != null)
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.file(
-                  File(_imagePath!),
-                  height: 150,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: CircleAvatar(
-                  backgroundColor: Colors.black54,
-                  radius: 18,
-                  child: IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 18),
-                    onPressed: _removeImage,
+        Row(
+          children: [
+            Text('Overlay Images', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(width: 8),
+            Text(
+              '(${_imagePaths.length} added, random selection)',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey,
                   ),
-                ),
-              ),
-            ],
-          )
-        else
-          OutlinedButton.icon(
-            onPressed: _pickImage,
-            icon: const Icon(Icons.image),
-            label: const Text('Choose Image'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_imagePaths.isNotEmpty)
+          SizedBox(
+            height: 100,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _imagePaths.length,
+              itemBuilder: (context, index) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          File(_imagePaths[index]),
+                          height: 100,
+                          width: 100,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () => _removeImage(index),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close, color: Colors.white, size: 14),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _pickImage,
+          icon: const Icon(Icons.add_photo_alternate),
+          label: Text(_imagePaths.isEmpty ? 'Add Image' : 'Add More Images'),
+        ),
       ],
     );
   }
 
   Widget _buildTextInput() {
-    return TextFormField(
-      controller: _textController,
-      decoration: const InputDecoration(
-        labelText: 'Overlay Text',
-        hintText: 'Stay Focused!',
-        border: OutlineInputBorder(),
-      ),
-      maxLines: 2,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Overlay Quotes', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(width: 8),
+            Text(
+              '(random selection)',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey,
+                  ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          title: const Text('Use default motivational quotes'),
+          subtitle: Text(
+            _useDefaultQuotes
+                ? '${BlockingRule.defaultQuotes.length} inspiring quotes'
+                : 'Using custom quotes',
+            style: const TextStyle(fontSize: 12),
+          ),
+          value: _useDefaultQuotes,
+          onChanged: (value) {
+            setState(() {
+              _useDefaultQuotes = value;
+              if (!value && _overlayTexts.isEmpty) {
+                _overlayTexts.add(''); // Add empty quote field
+              }
+            });
+          },
+          contentPadding: EdgeInsets.zero,
+        ),
+        if (_useDefaultQuotes) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Default quotes include:',
+                  style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                ...BlockingRule.defaultQuotes.take(3).map(
+                      (q) => Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          '"$q"',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade700,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ),
+                Text(
+                  '...and ${BlockingRule.defaultQuotes.length - 3} more',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else ...[
+          const SizedBox(height: 8),
+          ...List.generate(_overlayTexts.length, (index) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      initialValue: _overlayTexts[index],
+                      decoration: InputDecoration(
+                        labelText: 'Quote ${index + 1}',
+                        hintText: 'Enter your motivational quote',
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (value) => _updateQuote(index, value),
+                      maxLines: 2,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                    onPressed: _overlayTexts.length > 1 ? () => _removeQuote(index) : null,
+                  ),
+                ],
+              ),
+            );
+          }),
+          OutlinedButton.icon(
+            onPressed: _addQuote,
+            icon: const Icon(Icons.add),
+            label: const Text('Add Quote'),
+          ),
+        ],
+      ],
     );
   }
 
